@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Trade P&L Calculator</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
+
+  :root {
+    --bg: #f5f4f0; --surface: #ffffff; --surface2: #f0efe9;
+    --border: #e2e0d8; --border2: #ccc9be;
+    --text: #1a1917; --text2: #6b6860; --text3: #9e9b92;
+    --accent: #1a5fb4;
+    --profit: #1d7a4a; --profit-bg: #e6f5ed;
+    --loss: #b8320a;   --loss-bg: #fdf0eb;
+    --warn: #8a6500;   --warn-bg: #fdf6e3;
+    --info: #1a5fb4;   --info-bg: #e8f0fd;
+    --radius: 10px; --radius-sm: 6px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; }
+
+  .page-header {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 16px 32px; display: flex; align-items: center;
+    justify-content: space-between; position: sticky; top: 0; z-index: 100;
+  }
+
+  .logo { display: flex; align-items: center; gap: 10px; }
+  .logo-icon { width: 32px; height: 32px; background: var(--text); border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+  .logo-icon svg { width: 18px; height: 18px; fill: #fff; }
+  .logo-text { font-size: 15px; font-weight: 600; }
+  .logo-sub  { font-size: 12px; color: var(--text3); }
+
+  #live-clock {
+    font-family: 'DM Mono', monospace; font-size: 13px; color: var(--text2);
+    background: var(--surface2); padding: 6px 12px; border-radius: 20px; border: 1px solid var(--border);
+  }
+
+  .banner {
+    display: none; align-items: center; gap: 10px;
+    padding: 10px 32px; font-size: 13px; font-weight: 500;
+  }
+  .banner.info  { background: var(--info-bg);   color: var(--info);   display: flex; }
+  .banner.error { background: var(--loss-bg);   color: var(--loss);   display: flex; }
+  .banner.ok    { background: var(--profit-bg); color: var(--profit); display: flex; }
+
+  .spinner {
+    width: 14px; height: 14px; border: 2px solid currentColor;
+    border-top-color: transparent; border-radius: 50%;
+    animation: spin .7s linear infinite; flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .container { max-width: 860px; margin: 0 auto; padding: 28px 20px 60px; }
+
+  .section-title {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: .08em; color: var(--text3); margin-bottom: 10px;
+  }
+
+  .card {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 24px; margin-bottom: 16px;
+  }
+
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .field.full { grid-column: 1 / -1; }
+
+  label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text2); }
+
+  input[type="text"], input[type="number"] {
+    height: 42px; border: 1px solid var(--border); border-radius: var(--radius-sm);
+    padding: 0 12px; font-size: 14px; font-family: 'DM Sans', sans-serif;
+    color: var(--text); background: var(--surface); outline: none; width: 100%;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(26,95,180,.12); }
+  input::placeholder { color: var(--text3); }
+
+  .comm-fixed {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--warn-bg); border: 1px solid #e8d98a;
+    border-radius: var(--radius-sm); padding: 10px 14px; margin-top: 6px;
+  }
+  .comm-badge { font-size: 11px; font-weight: 600; color: var(--warn); text-transform: uppercase; letter-spacing: .05em; }
+  .comm-formula { font-size: 11px; color: var(--warn); flex: 1; }
+  .comm-val { font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500; color: var(--warn); }
+
+  .results-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; margin-top: 20px; }
+
+  .result-box { border-radius: var(--radius-sm); padding: 14px 16px; border: 1px solid var(--border); background: var(--surface2); }
+  .result-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .07em; color: var(--text3); margin-bottom: 6px; }
+  .result-value { font-family: 'DM Mono', monospace; font-size: 20px; font-weight: 500; color: var(--text); }
+  .result-value.profit { color: var(--profit); }
+  .result-value.loss   { color: var(--loss); }
+  .result-box.profit-box { background: var(--profit-bg); border-color: #a8dfc0; }
+  .result-box.loss-box   { background: var(--loss-bg);   border-color: #f4b99c; }
+
+  .btn-row { display: flex; gap: 10px; margin-top: 20px; flex-wrap: wrap; }
+
+  button {
+    font-family: 'DM Sans', sans-serif; font-size: 14px; cursor: pointer;
+    border-radius: var(--radius-sm); height: 42px; padding: 0 20px;
+    border: 1px solid var(--border2); background: transparent; color: var(--text);
+    font-weight: 500; transition: background .12s, transform .1s;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  button:hover   { background: var(--surface2); }
+  button:active  { transform: scale(.97); }
+  button:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+
+  .btn-primary { background: var(--text); color: #fff; border-color: var(--text); padding: 0 24px; }
+  .btn-primary:hover { background: #333; }
+  .btn-export  { background: #1d7a4a; color: #fff; border-color: #1d7a4a; }
+  .btn-export:hover { background: #175f3b; }
+  .btn-refresh { color: var(--info); border-color: var(--border); }
+  .btn-refresh:hover { background: var(--info-bg); }
+  .btn-clear-all { color: var(--loss); border-color: var(--border); }
+  .btn-clear-all:hover { background: var(--loss-bg); }
+
+  .history-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; flex-wrap: wrap; gap: 10px; }
+  .hist-meta { display: flex; align-items: center; gap: 10px; }
+  .hist-count { font-size: 12px; color: var(--text3); background: var(--surface2); border: 1px solid var(--border); border-radius: 20px; padding: 3px 10px; }
+  .hist-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .hist-actions button { height: 34px; font-size: 12px; padding: 0 14px; }
+
+  .empty-state { text-align: center; padding: 40px 0; color: var(--text3); }
+  .empty-icon  { font-size: 28px; margin-bottom: 10px; }
+  .empty-text  { font-size: 13px; }
+
+  .tbl-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  thead th {
+    text-align: left; padding: 8px 10px; font-size: 10px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: .07em; color: var(--text3);
+    border-bottom: 1px solid var(--border); white-space: nowrap;
+  }
+  tbody td { padding: 10px; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: var(--surface2); }
+
+  .td-item    { font-weight: 500; }
+  .td-mono    { font-family: 'DM Mono', monospace; font-size: 12px; }
+  .td-profit  { font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 600; color: var(--profit); }
+  .td-loss    { font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 600; color: var(--loss); }
+  .td-neutral { font-family: 'DM Mono', monospace; font-size: 12px; }
+
+  .summary-strip { display: none; gap: 20px; flex-wrap: wrap; padding: 14px 0 0; border-top: 1px solid var(--border); margin-top: 16px; }
+  .summary-item  { display: flex; flex-direction: column; gap: 2px; }
+  .summary-label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--text3); }
+  .summary-value { font-family: 'DM Mono', monospace; font-size: 13px; font-weight: 500; }
+  .summary-value.sp { color: var(--profit); }
+  .summary-value.sl { color: var(--loss); }
+
+  .toast {
+    position: fixed; bottom: 28px; left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    background: var(--text); color: #fff; padding: 10px 22px;
+    border-radius: 24px; font-size: 13px; font-weight: 500;
+    opacity: 0; transition: opacity .25s, transform .25s;
+    pointer-events: none; z-index: 9999; white-space: nowrap;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  @media (max-width: 560px) {
+    .page-header { padding: 14px 16px; }
+    .container   { padding: 20px 14px 50px; }
+    .form-grid   { grid-template-columns: 1fr; }
+    .results-row { grid-template-columns: 1fr; }
+    .card        { padding: 18px 16px; }
+    #live-clock  { font-size: 11px; padding: 5px 9px; }
+    .banner      { padding: 10px 16px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="page-header">
+  <div class="logo">
+    <div class="logo-icon">
+      <svg viewBox="0 0 24 24"><path d="M3 3h7v7H3zm11 0h7v7h-7zM3 14h7v7H3zm14 3v-3h-3v-1h4v4zm0 0h3v4h-4v-3h1zm-3 0h1v3h-1z"/></svg>
+    </div>
+    <div>
+      <div class="logo-text">Trade P&amp;L Calculator</div>
+      <div class="logo-sub">Synced across all devices via Google Sheets</div>
+    </div>
+  </div>
+  <div id="live-clock">--:--:--</div>
+</header>
+
+<div id="banner" class="banner">
+  <div class="spinner" id="banner-spinner"></div>
+  <span id="banner-msg"></span>
+</div>
+
+<div class="container">
+
+  <div class="section-title">New Calculation</div>
+  <div class="card">
+    <div class="form-grid">
+      <div class="field full">
+        <label>Item / Commodity</label>
+        <input type="text" id="item" placeholder="e.g. Gold, AAPL, BTC, Crude Oil…">
+      </div>
+      <div class="field">
+        <label>Buy Price (per unit)</label>
+        <input type="number" id="buy" placeholder="0.00" min="0" step="0.01">
+      </div>
+      <div class="field">
+        <label>Sell Price (per unit)</label>
+        <input type="number" id="sell" placeholder="0.00" min="0" step="0.01">
+      </div>
+      <div class="field">
+        <label>Quantity</label>
+        <input type="number" id="qty" placeholder="0" min="0" step="1">
+      </div>
+      <div class="field" style="justify-content:flex-end">
+        <label>Commission Rate</label>
+        <div class="comm-fixed">
+          <span class="comm-badge">Fixed</span>
+          <span class="comm-formula">(Buy + Sell) × Qty × 0.04%</span>
+          <span class="comm-val" id="comm-preview">—</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="results-row">
+      <div class="result-box" id="box-comm">
+        <div class="result-label">Commission</div>
+        <div class="result-value" id="out-comm">—</div>
+      </div>
+      <div class="result-box" id="box-pl">
+        <div class="result-label">Profit / Loss</div>
+        <div class="result-value" id="out-pl">—</div>
+      </div>
+      <div class="result-box" id="box-net">
+        <div class="result-label">Net P/L (after comm.)</div>
+        <div class="result-value" id="out-net">—</div>
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn-primary" id="save-btn" onclick="addToHistory()">＋ Save to History</button>
+      <button onclick="clearForm()">Clear</button>
+    </div>
+  </div>
+
+  <div class="section-title" style="margin-top:24px">Calculation History</div>
+  <div class="card">
+    <div class="history-header">
+      <div class="hist-meta">
+        <span class="hist-count" id="hist-count">Loading…</span>
+      </div>
+      <div class="hist-actions">
+        <button class="btn-refresh" onclick="loadHistory()">↻ Refresh</button>
+        <button class="btn-export" id="export-btn" onclick="exportXLSX()" disabled>⬇ Export Excel</button>
+      </div>
+    </div>
+    <div id="hist-body"></div>
+    <div class="summary-strip" id="summary-strip"></div>
+  </div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const SHEET_URL = 'https://script.google.com/macros/s/AKfycbyiy_zpX5HhI9iKI-xXnNNCRIoK1I8lcnYW4O41a0LlLZ0-EbD6rKfv-Y4QfkoihoT-/exec';
+let history = [];
+let isSaving = false;
+
+function showBanner(msg, type, spinner) {
+  const b = document.getElementById('banner');
+  const s = document.getElementById('banner-spinner');
+  document.getElementById('banner-msg').textContent = msg;
+  b.className = 'banner ' + type;
+  s.style.display = spinner ? 'block' : 'none';
+}
+function hideBanner() { document.getElementById('banner').className = 'banner'; }
+
+function updateClock() {
+  document.getElementById('live-clock').textContent = new Date().toLocaleString('en-IN', {
+    day: '2-digit', month: 'short', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+  });
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+function fmt(n, sign) {
+  const abs = Math.abs(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  if (sign) return (n >= 0 ? '+₹' : '-₹') + abs;
+  return '₹' + abs;
+}
+
+function calcValues() {
+  const buy  = parseFloat(document.getElementById('buy').value);
+  const sell = parseFloat(document.getElementById('sell').value);
+  const qty  = parseFloat(document.getElementById('qty').value);
+  if (isNaN(buy) || isNaN(sell) || isNaN(qty) || qty <= 0) return null;
+  const comm = (buy + sell) * qty * 0.0004;
+  const pl   = (sell - buy) * qty;
+  const net  = pl - comm;
+  return { buy, sell, qty, comm, pl, net };
+}
+
+function updateCalc() {
+  const res    = calcValues();
+  const commEl = document.getElementById('out-comm');
+  const plEl   = document.getElementById('out-pl');
+  const netEl  = document.getElementById('out-net');
+  const boxPl  = document.getElementById('box-pl');
+  const boxNet = document.getElementById('box-net');
+  const prev   = document.getElementById('comm-preview');
+
+  if (!res) {
+    [commEl, plEl, netEl].forEach(el => { el.textContent = '—'; el.className = 'result-value'; });
+    boxPl.className = boxNet.className = 'result-box';
+    prev.textContent = '—';
+    return;
+  }
+
+  prev.textContent = commEl.textContent = fmt(res.comm);
+  commEl.className = 'result-value';
+
+  plEl.textContent = fmt(res.pl, true);
+  plEl.className   = 'result-value ' + (res.pl > 0 ? 'profit' : res.pl < 0 ? 'loss' : '');
+  boxPl.className  = 'result-box '   + (res.pl > 0 ? 'profit-box' : res.pl < 0 ? 'loss-box' : '');
+
+  netEl.textContent = fmt(res.net, true);
+  netEl.className   = 'result-value ' + (res.net > 0 ? 'profit' : res.net < 0 ? 'loss' : '');
+  boxNet.className  = 'result-box '   + (res.net > 0 ? 'profit-box' : res.net < 0 ? 'loss-box' : '');
+}
+
+['buy','sell','qty'].forEach(id => document.getElementById(id).addEventListener('input', updateCalc));
+
+async function loadHistory() {
+  showBanner('Loading history from Google Sheets…', 'info', true);
+  document.getElementById('hist-count').textContent = 'Loading…';
+  try {
+    const res  = await fetch(SHEET_URL + '?t=' + Date.now());
+    const rows = await res.json();
+    history = [];
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r[1] && !r[2]) continue;
+      history.push({ id: i, datetime: r[1]||'', item: r[2]||'', buy: r[3], sell: r[4], qty: r[5], comm: r[6], pl: r[7], net: r[8] });
+    }
+    hideBanner();
+    renderHistory();
+  } catch(e) {
+    showBanner('Could not load history — check your internet connection.', 'error', false);
+    document.getElementById('hist-count').textContent = 'Error loading';
+  }
+}
+
+async function addToHistory() {
+  if (isSaving) return;
+  const item = document.getElementById('item').value.trim() || 'Unknown';
+  const res  = calcValues();
+  if (!res) { showToast('Please enter buy price, sell price and quantity'); return; }
+
+  isSaving = true;
+  const saveBtn = document.getElementById('save-btn');
+  saveBtn.disabled = true;
+  saveBtn.innerHTML = '<span class="spinner" style="border-color:#fff;border-top-color:transparent"></span> Saving…';
+  showBanner('Saving entry to Google Sheets…', 'info', true);
+
+  const entry = {
+    datetime: new Date().toLocaleString('en-IN', {
+      day: '2-digit', month: 'short', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
+    }),
+    item,
+    buy:  parseFloat(res.buy.toFixed(4)),
+    sell: parseFloat(res.sell.toFixed(4)),
+    qty:  res.qty,
+    comm: parseFloat(res.comm.toFixed(4)),
+    pl:   parseFloat(res.pl.toFixed(4)),
+    net:  parseFloat(res.net.toFixed(4))
+  };
+
+  try {
+    await fetch(SHEET_URL, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(entry)
+    });
+    clearForm();
+    showBanner('Saved! Reloading history…', 'ok', true);
+    await new Promise(r => setTimeout(r, 2000));
+    await loadHistory();
+    showToast('Entry saved & synced ✓');
+  } catch(e) {
+    showBanner('Save failed — check your internet connection.', 'error', false);
+    showToast('Save failed. Try again.');
+  } finally {
+    isSaving = false;
+    saveBtn.disabled = false;
+    saveBtn.innerHTML = '＋ Save to History';
+  }
+}
+
+function clearForm() {
+  ['item','buy','sell','qty'].forEach(id => document.getElementById(id).value = '');
+  updateCalc();
+  document.getElementById('item').focus();
+}
+
+function renderHistory() {
+  const body    = document.getElementById('hist-body');
+  const countEl = document.getElementById('hist-count');
+  const expBtn  = document.getElementById('export-btn');
+  const strip   = document.getElementById('summary-strip');
+
+  countEl.textContent = history.length + (history.length === 1 ? ' entry' : ' entries');
+  expBtn.disabled = history.length === 0;
+
+  if (history.length === 0) {
+    body.innerHTML = '<div class="empty-state"><div class="empty-icon">📋</div><div class="empty-text">No entries yet. Fill in the form above and click "Save to History".</div></div>';
+    strip.style.display = 'none';
+    return;
+  }
+
+  let totalPL = 0, totalComm = 0, totalNet = 0, wins = 0;
+  history.forEach(e => {
+    totalPL   += parseFloat(e.pl)   || 0;
+    totalComm += parseFloat(e.comm) || 0;
+    totalNet  += parseFloat(e.net)  || 0;
+    if ((parseFloat(e.pl) || 0) > 0) wins++;
+  });
+
+  body.innerHTML = `<div class="tbl-wrap"><table>
+    <thead><tr>
+      <th>#</th><th>Date &amp; Time</th><th>Item</th>
+      <th>Buy ₹</th><th>Sell ₹</th><th>Qty</th>
+      <th>Commission ₹</th><th>Profit / Loss ₹</th><th>Net P/L ₹</th>
+    </tr></thead>
+    <tbody id="hist-rows"></tbody>
+  </table></div>`;
+
+  const tbody = document.getElementById('hist-rows');
+  history.forEach((e, i) => {
+    const pl  = parseFloat(e.pl)  || 0;
+    const net = parseFloat(e.net) || 0;
+    const plC  = pl  > 0 ? 'td-profit' : pl  < 0 ? 'td-loss' : 'td-neutral';
+    const netC = net > 0 ? 'td-profit' : net < 0 ? 'td-loss' : 'td-neutral';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td style="color:var(--text3);font-size:11px">${i+1}</td>
+      <td style="font-size:12px;color:var(--text2)">${e.datetime}</td>
+      <td class="td-item">${e.item}</td>
+      <td class="td-mono">${parseFloat(e.buy).toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+      <td class="td-mono">${parseFloat(e.sell).toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+      <td class="td-mono">${e.qty}</td>
+      <td class="td-mono">${parseFloat(e.comm).toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+      <td class="${plC}">${pl>=0?'+':'-'}₹${Math.abs(pl).toLocaleString('en-IN',{minimumFractionDigits:2})}</td>
+      <td class="${netC}">${net>=0?'+':'-'}₹${Math.abs(net).toLocaleString('en-IN',{minimumFractionDigits:2})}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  const plC  = totalPL  > 0 ? 'sp' : totalPL  < 0 ? 'sl' : '';
+  const netC = totalNet > 0 ? 'sp' : totalNet < 0 ? 'sl' : '';
+  strip.style.display = 'flex';
+  strip.innerHTML = `
+    <div class="summary-item"><span class="summary-label">Total Trades</span><span class="summary-value">${history.length}</span></div>
+    <div class="summary-item"><span class="summary-label">Wins</span><span class="summary-value sp">${wins}</span></div>
+    <div class="summary-item"><span class="summary-label">Losses</span><span class="summary-value sl">${history.length - wins}</span></div>
+    <div class="summary-item"><span class="summary-label">Total Commission</span><span class="summary-value">₹${totalComm.toLocaleString('en-IN',{minimumFractionDigits:2})}</span></div>
+    <div class="summary-item"><span class="summary-label">Total P/L</span><span class="summary-value ${plC}">${totalPL>=0?'+':'-'}₹${Math.abs(totalPL).toLocaleString('en-IN',{minimumFractionDigits:2})}</span></div>
+    <div class="summary-item"><span class="summary-label">Net P/L (after comm.)</span><span class="summary-value ${netC}">${totalNet>=0?'+':'-'}₹${Math.abs(totalNet).toLocaleString('en-IN',{minimumFractionDigits:2})}</span></div>`;
+}
+
+function exportXLSX() {
+  if (!window.XLSX) { showToast('Excel library not ready, try again'); return; }
+  const rows = history.map((e, i) => ({
+    'No.': i+1, 'Date & Time': e.datetime, 'Item': e.item,
+    'Buy Price (₹)': parseFloat(e.buy), 'Sell Price (₹)': parseFloat(e.sell),
+    'Quantity': parseFloat(e.qty), 'Commission (₹)': parseFloat(e.comm),
+    'Profit / Loss (₹)': parseFloat(e.pl), 'Net P/L (₹)': parseFloat(e.net)
+  }));
+  rows.push({});
+  rows.push({
+    'No.': 'TOTAL', 'Date & Time': '', 'Item': '',
+    'Buy Price (₹)': '', 'Sell Price (₹)': '',
+    'Quantity':          parseFloat(history.reduce((s,e)=>s+(parseFloat(e.qty)||0),0).toFixed(2)),
+    'Commission (₹)':    parseFloat(history.reduce((s,e)=>s+(parseFloat(e.comm)||0),0).toFixed(2)),
+    'Profit / Loss (₹)': parseFloat(history.reduce((s,e)=>s+(parseFloat(e.pl)||0),0).toFixed(2)),
+    'Net P/L (₹)':       parseFloat(history.reduce((s,e)=>s+(parseFloat(e.net)||0),0).toFixed(2))
+  });
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [6,22,18,14,14,10,16,18,16].map(w=>({wch:w}));
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, 'Trade History');
+  XLSX.writeFile(wb, 'trade_history_' + new Date().toISOString().slice(0,10) + '.xlsx');
+  showToast('Excel file downloaded!');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2800);
+}
+
+loadHistory();
+document.getElementById('item').focus();
+</script>
+</body>
+</html>
